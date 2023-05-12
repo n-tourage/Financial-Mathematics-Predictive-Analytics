@@ -1,0 +1,761 @@
+---
+title: "Final Project"
+author: "GH"
+date: "2023-04-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Math 5490 Final Project
+
+# Due May 11
+
+## Attestation
+
+I hereby declare :
+
+1.  The work submitted is mine and mine alone.
+2.  I did not consult another person for answers or interpretations.
+3.  I did not assist or share answers with another student.
+
+Name: Brendan Pham
+
+## Instructions
+
+For each problem, download the appropriate csv files from Canvas.
+
+-   Perform Exploratory Data Analysis
+
+-   Pre-preprocess the features as appropriate
+
+-   Identify five different modeling approaches that might be appropriate for the given problem
+
+-   Fit the models identified in the previous step
+
+-   Select your favorite model and explain why you prefer it.
+
+-   Predict the target using your selected model applied to the unlabeled test data
+
+-   Submit an rmd file and two csv files with your predictions (one for each problem)
+
+```{r}
+library(readr)
+library(tidyverse)
+library(caret)
+library(MASS)
+library(dplyr)
+library(class)
+library(pROC)
+library(rpart)
+library(e1071)
+library(splines)
+library(glmnetUtils)
+library(mgcv)
+library(gam)
+library(randomForest)
+library(gam)
+```
+
+## Problem one: Regression
+
+The simulated data set provided the information of observations to related to the response Y given Intensity, Depth, Strength, Speed, Color, type, Y
+
+The task: find the best model of 5 models to predict the target variable Y
+
+[Approach:]{.underline}
+
+-   Import Data
+
+-   Preprocess
+
+-   Exploring the Data
+
+-   Modeling
+
+-   Model Evaluation
+
+**1.Import Data**
+
+```{r}
+#settwd to math5490 folder
+#folder with labels and test folder
+setwd("C:/Users/brend/OneDrive/Documents/math5490")
+one_train <- read_csv("Problem1_datawithlabels.csv")
+one_test <- read_csv("Problem1_test.csv")
+head(one_train)
+#factor type and color
+one_train$type <- as.factor(one_train$type)
+one_train$color <- as.factor(one_train$color)
+
+#treating test as factors incase
+one_test$type <- as.factor(one_test$type)
+one_test$color <- as.factor(one_test$color)
+
+str(one_train)
+summary(one_train)
+```
+
+The data was received by Final project for data with labels and a test set. The summary outlined shows a data set with 500 observations and 7 variables with a target variable of response Y. The summary of the data set shows there isn't any na values rather outliers that exist for the variables
+
+**2. Exploratory Data Analysis**
+
+Data analysis will done on the label dataset
+
+**Corrplot**
+
+```{r}
+library(corrplot)
+corrplot(cor(one_train[,1:4]))
+```
+
+Plotting the variables on the correlation plot, variables depth and insensity shows no correlation. While variables strength and speed show correlation of 0.6, but since we are working with less then 5 variables we will consider it in the model. Some options is to remove strength and speed from the models
+
+**Density Plot Y**
+
+```{r}
+ggplot(data = one_train, aes(x = Y, fill = "grey")) + geom_density()
+```
+
+Normal distribution of Y values, no skewness that could reflect bias in data-set
+
+**Scatter-plot Intensity**
+
+```{r}
+ggplot(data = one_train, aes(x = Intensity, y = Y)) + geom_point() +geom_smooth(method='lm', formula= y~x)
+```
+
+Linear relationship between strength and Y with no obvious outliers
+
+**Scatter-plot Depth**
+
+```{r}
+ggplot(data = one_train, aes(x = Depth, y = Y)) + geom_point() +geom_smooth(method='lm', formula= y~x)
+```
+
+Non-linear relationship between depth and Y, scatterplot reflects that depth has no effect on response Y
+
+**Scatter-plot Color**
+
+```{r}
+ggplot(data = one_train, aes(x = Strength, y = Y)) + geom_point()+geom_smooth(method='lm', formula= y~x)
+```
+
+Linear model between strength and response Y
+
+**Scatter-plot Speed**
+
+```{r}
+ggplot(data = one_train, aes(x = Speed, y = Y)) + geom_point() +geom_smooth(method='lm', formula= y~x)
+```
+
+Scatter-plot of speed shows that speed has a non-linear relationship with Y also notice that most of the data ranges between 10-20 speed while some cases have speeds of 40. Is it an outlier that will reflect on the model?
+
+**Boxplot Color**
+
+```{r}
+ggplot(data = one_train, aes(x = color, y = Y)) + geom_boxplot()
+```
+
+Colors like green and red seems to making responding with a higher response of Y than blue and pink. This difference will show in the modeling, where color is significant. Colors with pink gets on average less response in Y than all colors.
+
+**Boxplot Type**
+
+```{r}
+ggplot(data = one_train, aes(x = type, y = Y)) + geom_boxplot()
+```
+
+No remarkable differences between apple and orange just notice than orange does have median and spread then Apple.
+
+**3. Preprocess**
+
+```{r}
+#deselecting ...1
+one_train <- one_train[,2:8]
+
+#splitting 0.80 train .20 test
+idx <- createDataPartition(one_train$Y, p=0.8, list = FALSE)
+
+df_train <- one_train[idx,]
+df_test <- one_train[-idx,]
+
+#standarizing without response variable
+pp <- preProcess(df_train[,1:6])
+
+df_train <- predict(pp,df_train)
+df_test <- predict(pp,df_test)
+```
+
+There were no missing variables between all sets of variables. In cases if were to handle missing data , we'll delete variables with the missing data. When pre-processing the data for modeling we had to worry about:
+
+-   Setting type and color as factors
+
+-   Split data-set for data with labels into testing and training subsets where we will utilize 80% for training and 20% for testing to fine tune models and measure for model evaluation
+
+-   Standardize the data
+
+**4. Modeling**
+
+Chosen five different models utilized throughout the course for regression models
+
+[**Models**]{.underline}
+
+1.  Step Regression
+
+    Supervised machine learning algorithm that utilizesnull models to full model and determine by forward AIC metrics which variables to utilize in final model
+
+2.  Lasso Regression
+
+    Supervised machine learning algorithm:Lasso regression utilizes shrinkage where observations a shrinked towards a mean.
+
+3.  Random Forest Regression
+
+    Supervised machine learning algorithm that is used for this purpose of the project to predict two cases utilizing ensemble learning methods. Random forest uses multiple decision trees to receive a majority vote for the final model.
+
+4.  GAM
+
+    Unlike linear models, GAM is a supervised machine learning algorithm that models non-linear data utilizing piece wise functions such as splines.
+
+5.  Ridge Regression
+
+    Ridge regression is a supervise machine learning algorithm that estimates multiple regression model's coefficient if they are highly correlated.
+
+**Step Regression**
+
+```{r}
+#null model and full model for step regression
+null_model <- lm(Y ~1, data = df_train)
+full_model <-lm(Y~.,data = df_train)
+
+#step forward
+step(null_model,scope = list(lower = null_model,upper = full_model),direction = 'forward')
+
+#model from final step
+step_forward_lr_model = lm(formula = Y ~ color + Strength + Depth + Intensity + Speed, data = df_train)
+
+#plot
+par(mfrow= c(1,4))
+plot(step_forward_lr_model)
+
+step_predict <- predict(step_forward_lr_model , df_test)
+postResample(step_predict, df_test$Y) 
+```
+
+Step forward regression finalizing on Y\~color + strength + depth + intensity + speed recieving a model evaluation highlighted at the end of the summary
+
+**Lasso**
+
+```{r}
+lassoCV <- cv.glmnet(Y~.,data = df_train)
+
+lassoMod <- glmnet(Y ~., data = df_train, lambda = lassoCV$lambda.min)
+
+lasso_preds <- predict(lassoMod , df_test)
+
+postResample(lasso_preds ,df_test$Y)
+```
+
+Lasso regression model with all variables receiving a model evaluation above
+
+**Random Forest Regression**
+
+```{r}
+ctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 5)
+
+grid_mtry = data.frame(mtry = seq(1,6))
+
+
+rf_cv <- train(Y~.-Speed,
+               data = df_train,
+               method = "rf",
+               trControl = ctrl,
+               tunegrid = grid_mtry,
+               importance = TRUE)
+rf_cv
+
+```
+
+```{r}
+set.seed(2023)
+
+#model with varImportance
+ggplot2::ggplot(varImp(rf_cv))
+
+#Full model with every variable
+rfMod <-randomForest(Y~.,data = df_train, mtry =4)
+
+rf_preds <- predict(rfMod , df_test)
+paste("Full model")
+postResample(rf_preds ,df_test$Y)
+
+
+#Final model after deselecting speed from variable importance
+
+rfMod <-randomForest(Y~.-Speed,data = df_train, mtry =4)
+plot(rfMod)
+
+rf_preds <- predict(rfMod , df_test)
+paste('Final model after -speed')
+postResample(rf_preds ,df_test$Y)
+```
+
+These models are before and after removing the least important variable after running a 5 fold 5 repeat cross validated with a final model with mtry =4 and removing speed from the model
+
+**GAM**
+
+```{r}
+library(mgcv)
+#GAM model with splines on depth and strength
+gammod <- gam(Y~Intensity+s(Depth) + Strength+color, data= df_train)
+summary(gammod)
+
+
+par(mfrow= c(1,4))
+plot(gammod)
+
+
+gam_preds <- predict(gammod , df_test)
+postResample(gam_preds ,df_test$Y)
+```
+
+GAM model after recognizing that depth has a non-linear relationship and removing speed recieving a model evaluation above
+
+**Ridge Regression**
+
+```{r}
+#repeats with 5 folds and 5 repeats
+trctrl <- trainControl(method = "repeatedcv",number = 5, repeats = 5)
+
+tune_grid <-expand.grid(lambda = 2^-seq(1,10), alpha = c(0,.5,1))
+
+glm_cv <- train(Y~color + Strength + Depth + Intensity ,data = df_train,
+                method = "glmnet",
+                trControl = trctrl,
+                tunegrid = tune_grid)
+
+glm_cv
+```
+
+```{r}
+ridge_mod <- glmnet(formula = Y ~ color + Strength + Depth + Intensity, lambda = 0.08756109, alpha = 0.1,data= df_train)
+ridge_mod
+
+ridge_preds <- predict(ridge_mod , df_test)
+
+postResample(ridge_preds ,df_test$Y)
+```
+
+Ridge regression model after removing speed and tuning model to lambda = 0.08756109 and
+
+**5. Model Evaluation**
+
+A quick summary of the metrics we will be utilizing to select between step regression, lasso regression, GAM, and Ridge Regression utilizing RMSE, R\^2, and MAE
+
+| [Model]{.underline}                    | [RMSE]{.underline}       | [R\^2]{.underline}      | [MAE]{.underline}       |
+|----------------------------------------|--------------------------|-------------------------|-------------------------|
+| Step Regression                        | 6.545900                 | 0.552775                | 5.135156                |
+| Lasso Regression                       | 6.5548271                | 0.5514951               | 5.1403698               |
+| [Random Forest Regression]{.underline} | [4.99913219]{.underline} | [0.7385407]{.underline} | [3.6250622]{.underline} |
+| GAM                                    | 5.3130609                | 0.7033933               | 4.1151326               |
+| Ridge Regression                       | 6.544768                 | 0.552601                | 5.139051                |
+
+Between selecting the models based off of complexity and interpretability the **random forest model** model is best suited to predict the variable Y with a RMSE of 4.99, R\^2 of 0.739, and MAE of 3.63. The reason is because the random forest model provided the best in all three metrics, being able to minimize the predicted and actual values and has a high goodness of fit while not being over fitting.
+
+**Final Model Prediction**
+
+```{r}
+prediction <- predict(rfMod, one_test)
+
+solution <-data.frame(Y = prediction)
+df1_solution <-cbind(one_test,solution)
+write_csv(df1_solution,'math5490finalprojectregressor.csv')
+
+```
+
+## Problem Two: Classification Models
+
+The simulated data set provides the information of Types A and B given gert, gort, bund, bord,and band. The task: predict Type's A or B given relevant information.
+
+Approach:
+
+1.  Import Data
+
+2.  Exploring the data: checking how the variables are interacting with eachother
+
+3.  Preprocess
+
+4.  Modeling
+
+5.  Model evaluation
+
+    1.  [**Import Data**]{.underline}
+
+```{r}
+setwd("C:/Users/brend/OneDrive/Documents")
+
+Problem2_datawithlabels <- read_csv("math5490/Problem2_datawithlabels.csv")
+Problem2_test <- read_csv("math5490/Problem2_test.csv")
+
+Problem2_datawithlabels$Type <-as.factor(Problem2_datawithlabels$Type)
+Problem2_datawithlabels$band <-as.factor(Problem2_datawithlabels$band )
+Problem2_datawithlabels = Problem2_datawithlabels[,2:7]
+summary(Problem2_datawithlabels)
+```
+
+The data was received by Final Project for data with labels and a test set. The summary outlined shows that there is 1000 rows with 5 variables with a target variable between type A or type B that will be changed to binary for ease of classification. The summary shows that the there are outliers but since there are mins and max that are spread around the mean, there is no concern for leveraging outlines. Somethings to note is that given the data set there are more Type A's then type B's.
+
+2.  [**Exploratory Data Analysis**]{.underline}
+
+Below are some uni-variate and bivariate analysis of the data
+
+**Corrplot**
+
+```{r}
+library(corrplot)
+corrplot(cor(Problem2_datawithlabels[,1:4]))
+```
+
+No correlation between numerical variables
+
+**Boxplot of Gert**
+
+```{r}
+ggplot(data = Problem2_datawithlabels, aes(x = Type, y = gert, fill = Type)) + geom_boxplot()
+
+```
+
+Between Type A and type B there is a minute difference, with Type A having: lower median,lower min, and lower max. The difference in the variables could reflect in the models significance if there isn't much change between the types
+
+**Boxplot of Gort**
+
+```{r}
+ggplot(data = Problem2_datawithlabels, aes(x = Type, y = gort, fill = Type)) + geom_boxplot()
+```
+
+Again given that there isn't much information regarding the the variables gort, as you can see the only differences between variables is that Type B has fewer upper outliers. The insignificance can reflect onto the modeling. For future notice; gort exudes lower signficance compared to all of the variables when training the models.
+
+**Boxplot of Bund**
+
+```{r}
+ggplot(data = Problem2_datawithlabels, aes(x = Type, y = bund, fill = Type)) + geom_boxplot()
+```
+
+Not a highly remarkable difference between type A and type B's valuation of Bund
+
+**Boxplot of Bord**
+
+```{r}
+ggplot(data = Problem2_datawithlabels, aes(x = Type, y = bord, fill = Type)) + geom_boxplot()
+```
+
+Again given that there isn't much information regarding the the variables bord as you can see the only differences between variables is that Type B has more lower outliers. The insignificance can reflect onto the modeling. For future notice;Bord exudes 2nd highest significance compared to all of the variables when training the models.
+
+**Barplot of band**
+
+```{r}
+ggplot(data = Problem2_datawithlabels,aes(x = band, fill = Type)) + geom_bar(position = "dodge")
+```
+
+Between categories these are actual bands; greenDay, Halestorm, iconforhire,and metric. Bands like green day see a higher Type A then Type B, halestorm receives a larger type B base. This variable band will see a large significance in predicting Types.
+
+3.  [**Processing Data**]{.underline}
+
+```{r}
+Problem2_datawithlabels$band <- as.factor(Problem2_datawithlabels$band)
+Problem2_datawithlabels$Type <- as.numeric(as.factor(Problem2_datawithlabels$Type)) - 1
+head(Problem2_datawithlabels)
+
+idx <- createDataPartition(Problem2_datawithlabels$Type, p=0.8, list = FALSE)
+
+class_train <- Problem2_datawithlabels[idx,]
+class_test <- Problem2_datawithlabels[-idx,]
+
+#Standarization
+PP <- preProcess(class_train[,1:5])
+class_train <- predict(PP,class_train)
+class_test <- predict(PP,class_test)
+```
+
+There were no missing variables between all sets of variables. If in case we were to handle missing data , we'll delete all the variables with the missing data. When processing the data we had to worry about
+
+-   Setting band as a factor and type as a numeric for binary classification
+
+-   Split data-set for data with labels into testing and training subsets where we will utilize 80% for training and 20% for testing
+
+-   standardization, transforming data into comparable scales to weight ranges
+
+[**4. Modeling**]{.underline}
+
+Chosen five different models utilized throughout the course for classification
+
+[**Models**]{.underline}
+
+1.  Logistic Regression Classification
+
+    Supervised machine learning binary classification that predicts the probability of two cases given multivariate models, utilizing a logistic function, to transform a linear combination into a binary.
+
+2.  Random Forest Classifier
+
+    Supervised machine learning algorithm that is used for this purpse of the project to predict two cases utilizing ensemble learning methods. Random forest uses multiple decision trees to receive a majority vote for the final model
+
+3.  KNN
+
+    Supervised machine learning algorithm that is non-parametric to predict classifications based on groupings of observations.
+
+4.  SVM
+
+    Supervised machine learning algorithm, linearly separates data set into two category to predict classification
+
+5.  Decision Tree
+
+    Supervised machine learning algorithm utilizes splits on nodes to predict categorization of data by criteria
+
+Most models will be cross validated on 5 folds and 5 repeats
+
+**Logistic Regression Classification**
+
+```{r}
+log_model <- glm(Type~bund+band+gert,data = class_train,family = "binomial")
+par(mfrow= c(1,4))
+plot(log_model)
+summary(log_model)
+#Deselected gort because of its insignificance to the model + binomial model to
+
+log_preds <- predict(log_model, class_test, type = "response")
+#predicts the model
+predict_reg <- ifelse(log_preds >0.5,1,0)
+#set prediction to 1/0 if >0.50
+
+error <- mean(class_test$Type != predict_reg)
+paste('Accuracy',round(1-error,4))
+```
+
+No cross validation was utilized to fine tune the model. After looking at the summary, there was a gort was a insignificant variable. Further modeling proves deselecting gort increased the accuracy of 0.655
+
+**Random Forest Classifier**
+
+```{r}
+trctrl <- trainControl(method = "repeatedcv", number = 5,repeats = 5)
+
+#rf grid ncol - 1
+rf_grid <- expand.grid(mtry = seq(from = 2, to = 5-1,by = 1))
+
+rf_cv <- train(as.factor(Type) ~., method = "rf",
+                  trControl = trctrl,
+                  importance = TRUE,
+                  tuneGrid = rf_grid,
+                  data = class_train)
+
+rf_cv
+```
+
+```{r}
+set.seed(2023)
+
+ggplot2::ggplot(varImp(rf_cv))
+#model before selecting features after variable importance
+rf_model_f <- randomForest(as.factor(Type)~., data = class_train, mtry = 2)
+rf_preds <- predict(rf_model_f, class_test, type = "response")
+
+error <- mean(class_test$Type != rf_preds)
+paste('Accuracy',round(1-error,4))
+
+#Model after with feature selection with variable importance selected - gort - bord
+rf_model_f <- randomForest(as.factor(Type)~bund+gert+band+bord, data = class_train, mtry = 2)
+rf_preds <- predict(rf_model_f, class_test, type = "response")
+summary(rf_model_f )
+
+error <- mean(class_test$Type != rf_preds)
+paste('Accuracy',round(1-error,4))
+
+```
+
+After cross validating model with 5 repeats and 5 folds, the final model was mtry =2. Before selecting the final model, I utlize feature importance to deselect the least important variable "gort" for the final model. After taking deselecting gort, notice the increase in accuracy.
+
+**KNN**
+
+```{r}
+trctrl <- trainControl(method = "repeatedcv", number = 5,repeats = 5)
+
+#tune grid based off optimal sqrt(observations)
+tune_grid <-expand.grid(k = seq(1,sqrt(nrow(class_train)-1),by = 4))
+
+knn_cv <- train(as.factor(Type) ~bund+gert+band + bord,
+                data = class_train,
+                method = "knn",
+                trControl = trctrl,
+                tuneGrid = tune_grid)
+
+knn_cv
+```
+
+```{r}
+data_r <- knn_cv$results
+#RMSE for respective K
+ggplot(data = data_r,aes(x = k, y = Accuracy)) +geom_line()
+```
+
+K with highest accuracy when trained is k=21 with accuracy of 0.6665024, this will be the final model selected for KNN
+
+```{r}
+set.seed(2023)
+#creating train and test for knn
+
+trainX <- class_train[,1:5]
+testX <- class_test[,1:5]
+
+#Replacing factors for numerics for knn model
+
+trainX$band <-as.numeric(trainX$band) - 1
+testX$band <-as.numeric(testX$band) - 1
+
+#knn model with k = 17
+knn_mod <- knnreg(trainX,as.numeric(class_train$Type)-1, k = 25)
+summary(knn_mod)
+
+
+#predicting and changing variables to 0/1 respectively
+knn_preds <- predict(knn_mod,testX) 
+predict_knn <- ifelse(knn_preds >0.5,1,0)
+
+#Misclassification error rate
+error <- mean(class_test$Type != predict_knn)
+paste('Accuracy',round(1-error,4))
+```
+
+After Cross validation of model the final model selected was knn with k=21,receiving a accuracy of 0.64
+
+**SVM Model**
+
+```{r}
+trctrl <- trainControl(method = "repeatedcv", number = 5,repeats = 5)
+
+tune_grid <- expand.grid(cost =  10^seq(-6,1))
+#tune grid based off of 2- class response variable
+svm_cv <-train(as.factor(Type)~band+gert+bund+bord,
+               data = class_train,
+               method = "svmLinear2",
+               trControl = trctrl,
+               tuneGrid = tune_grid)
+svm_cv
+```
+
+```{r}
+set.seed(2023)
+svm_mod <- svm(formula = Type~.-gort,data = class_train, kernal = "linear", cost = 0.1)
+
+svm_preds <- predict(svm_mod, class_test, type = "response")
+predict_svm <- ifelse(svm_preds >0.5,1,0)
+
+error <- mean(class_test$Type != predict_svm)
+paste('Accuracy',round(1-error,4))
+```
+
+After fine tuning the model with cross validation, the final model with cost= 0.01 provided an accuracy of 0.64
+
+**Single Decision Tree**
+
+```{r}
+trctrl <- trainControl(method = "repeatedcv", number = 5,repeats = 5)
+
+decision_cv <- train(as.factor(Type)~.-gort-bord,
+                     data = class_train,
+                     method = 'rpart',
+                     trControl = trctrl)
+decision_cv
+decision_cv$finalModel
+```
+
+```{r}
+set.seed(2023)
+#Treating Type as factor for rpart
+class_train$Type <-as.factor(class_train$Type)
+class_test$Type <-as.factor(class_test$Type)
+
+#cp = 0.04347826 given  model cross validation
+tree_mod <- rpart(Type~.-gort-bord, data = class_train, cp = 0.01567398)
+plot(tree_mod,uniform = TRUE)
+text(tree_mod, use.n=TRUE, all=TRUE, cex=.7)
+summary(tree_mod)
+
+
+tree_preds <- predict(tree_mod, class_test,type = "class")
+
+error <- mean(class_test$Type != tree_preds)
+paste('Accuracy',round(1-error,4))
+
+
+```
+
+After fine tuning the model with cross validation, the final model with cp= 0.01567398 and provided an accuracy of 0.645. The formula came to Type \~.-gort - bord
+
+**Model Evaluation**
+
+```{r}
+
+#Model evaluation with AUC curve
+options(repr.plot.width =10, repr.plot.height = 8)
+log.roc <- roc(response = class_test$Type, predictor = predict_reg)
+DT.roc <- roc(response = class_test$Type, predictor = as.numeric(tree_preds))
+rf.roc <- roc(response = class_test$Type, predictor = as.numeric(rf_preds))
+knn.roc <- roc(response = class_test$Type, predictor = predict_knn)
+svm.roc <- roc(response = class_test$Type, predictor = predict_svm)
+
+
+plot(log.roc,      legacy.axes = TRUE, print.auc = FALSE)
+plot(DT.roc, col = "blue", add = TRUE, print.auc = FALSE)
+plot(knn.roc, col = "red" , add = TRUE, print.auc = FALSE)
+plot(rf.roc, col = "orange" , add = TRUE, print.auc = FALSE)
+plot(svm.roc, col = "purple" , add = TRUE, print.auc = FALSE)
+
+legend("bottom", c("logistitic Regression", "Decision Tree","KNN","Random Forest","SVM"),
+       lty = c(1,1), lwd = c(2, 2), col = c("purple","orange", "red","blue", "black"), cex = 0.75)
+```
+
+**A Brief Summary**
+
+[Logistic regression]{.underline}
+
+-   Accuracy: 0.655
+
+[KNN]{.underline}
+
+-   Accuracy: 0.59
+
+[Random Forest]{.underline}
+
+-   Accuracy: 0.65
+
+[SVM]{.underline}
+
+-   Accuracy: 0.635
+
+[Decision Tree]{.underline}
+
+-   Accuracy : 0.645
+
+After consideration of all classification models: Logistic, KNN, Random Forest, SVM, and Decision Tree. Based on the high accuracy and AUC curve concludes that the SVM Classification model outperforms ever other model when evaluated based off those standards. The high accuracy given the missclassifications error shows that there is a low error rate based off the test set. Additionally after evaluating all of the models utilizing the AUC curve, it indicates that the SVM model has powerful predicting power of binary cases between Type classification. Given the AUC curve, random forest and SVM indiicated a effective model at classifying between true positive cases and false positive cases of Types. Therefore between all of the models, the SVM model provided a reliable approach for predicting the target "Type."
+
+Some other advantages that SVM brings
+
+-   Separating hyper-plane to distinguish classifications
+
+-   Memory efficient
+
+-   Doesn't suffer from overfitting
+
+-   There isn't much noise to the data set - less variables
+
+**Final Model Predictions on test.csv**
+
+```{r}
+prediction <- predict(svm_mod, Problem2_test)
+predict_svm <- ifelse(prediction>0.5,'B','A')
+
+
+solution <-data.frame(Type = predict_svm)
+df_solution <-cbind(Problem2_test,solution)
+write_csv(df_solution,'math5490finalprojectclass.csv')
+```
